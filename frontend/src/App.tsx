@@ -7,6 +7,7 @@ import type { Difficulty } from './components/UnifiedInterviewModal';
 import type { CategoryDTO } from './api/skill';
 import { Loader2 } from 'lucide-react';
 import { ROUTES } from './constants/routes';
+import { getAuthToken, isCurrentUserAdmin } from './api/request';
 
 // Lazy load components
 const UploadPage = lazy(() => import('./pages/UploadPage'));
@@ -22,6 +23,8 @@ const VoiceInterviewEvaluationPage = lazy(() => import('./pages/VoiceInterviewEv
 const InterviewSchedulePage = lazy(() => import('./pages/InterviewSchedulePage'));
 const InterviewHubPage = lazy(() => import('./pages/InterviewHubPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+const AdminUsersPage = lazy(() => import('./pages/AdminUsersPage'));
+const LoginPage = lazy(() => import('./pages/LoginPage'));
 const InterviewDetailPanel = lazy(() => import('./components/InterviewDetailPanel'));
 
 // Loading component
@@ -30,6 +33,23 @@ const Loading = () => (
     <div className="w-10 h-10 border-3 border-slate-200 border-t-primary-500 rounded-full animate-spin" />
   </div>
 );
+
+function RequireAuth() {
+  const location = useLocation();
+
+  if (!getAuthToken()) {
+    return <Navigate to="/login" replace state={{ from: location }} />;
+  }
+
+  return <Layout />;
+}
+
+function RequireAdminPage({ children }: { children: React.ReactNode }) {
+  if (!isCurrentUserAdmin()) {
+    return <Navigate to="/history" replace />;
+  }
+  return <>{children}</>;
+}
 
 // 上传页面包装器
 function UploadPageWrapper() {
@@ -168,8 +188,9 @@ function App() {
     <BrowserRouter>
       <Suspense fallback={<Loading />}>
         <Routes>
-          <Route path="/" element={<Layout />}>
-            {/* 默认重定向到简历管理页面 */}
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/" element={<RequireAuth />}>
+            {/* 默认进入简历管理页 */}
             <Route index element={<Navigate to="/history" replace />} />
 
             {/* 上传页面 */}
@@ -213,6 +234,16 @@ function App() {
 
             {/* 设置 */}
             <Route path="settings" element={<SettingsPage />} />
+
+            {/* 用户管理 */}
+            <Route
+              path="admin/users"
+              element={(
+                <RequireAdminPage>
+                  <AdminUsersPage />
+                </RequireAdminPage>
+              )}
+            />
 
             {/* 问答助手（知识库聊天） */}
             <Route path="knowledgebase/chat" element={<KnowledgeBaseQueryPageWrapper />} />

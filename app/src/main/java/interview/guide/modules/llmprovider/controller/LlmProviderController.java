@@ -1,6 +1,7 @@
 package interview.guide.modules.llmprovider.controller;
 
 import interview.guide.common.annotation.RateLimit;
+import interview.guide.common.auth.CurrentUserService;
 import interview.guide.common.result.Result;
 import interview.guide.modules.llmprovider.dto.AsrConfigDTO;
 import interview.guide.modules.llmprovider.dto.AsrConfigRequest;
@@ -33,6 +34,7 @@ import java.util.List;
 public class LlmProviderController {
 
   private final LlmProviderConfigService configService;
+  private final CurrentUserService currentUserService;
 
   @GetMapping("/list")
   @RateLimit(dimension = RateLimit.Dimension.GLOBAL, count = 30)
@@ -106,12 +108,14 @@ public class LlmProviderController {
   @GetMapping("/voice/asr")
   @RateLimit(dimension = RateLimit.Dimension.GLOBAL, count = 30)
   public Result<AsrConfigDTO> getAsrConfig() {
+    currentUserService.requireAdmin();
     return Result.success(configService.getAsrConfig());
   }
 
   @PutMapping("/voice/asr")
   @RateLimit(dimension = RateLimit.Dimension.GLOBAL, count = 5)
   public Result<Void> updateAsrConfig(@RequestBody AsrConfigRequest request) {
+    currentUserService.requireAdmin();
     configService.updateAsrConfig(request);
     return Result.success();
   }
@@ -119,12 +123,14 @@ public class LlmProviderController {
   @GetMapping("/voice/tts")
   @RateLimit(dimension = RateLimit.Dimension.GLOBAL, count = 30)
   public Result<TtsConfigDTO> getTtsConfig() {
+    currentUserService.requireAdmin();
     return Result.success(configService.getTtsConfig());
   }
 
   @PutMapping("/voice/tts")
   @RateLimit(dimension = RateLimit.Dimension.GLOBAL, count = 5)
   public Result<Void> updateTtsConfig(@RequestBody TtsConfigRequest request) {
+    currentUserService.requireAdmin();
     configService.updateTtsConfig(request);
     return Result.success();
   }
@@ -132,6 +138,7 @@ public class LlmProviderController {
   @PostMapping("/voice/asr/test")
   @RateLimit(dimension = RateLimit.Dimension.GLOBAL, count = 10)
   public Result<ProviderTestResult> testAsrConfig() {
+    currentUserService.requireAdmin();
     return Result.success(configService.testAsrConfig());
   }
 }

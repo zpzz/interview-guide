@@ -3,12 +3,17 @@ package interview.guide.common.ai;
 import interview.guide.common.config.LlmProviderProperties;
 import interview.guide.common.config.LlmProviderProperties.AdvisorConfig;
 import interview.guide.common.config.LlmProviderProperties.ProviderConfig;
+import interview.guide.common.auth.CurrentUser;
+import interview.guide.common.auth.CurrentUserService;
 import interview.guide.common.exception.BusinessException;
 import interview.guide.common.exception.ErrorCode;
+import interview.guide.modules.account.repository.UserRepository;
 import interview.guide.modules.llmprovider.model.LlmGlobalSettingEntity;
 import interview.guide.modules.llmprovider.model.LlmProviderEntity;
+import interview.guide.modules.llmprovider.model.LlmUserSettingEntity;
 import interview.guide.modules.llmprovider.repository.LlmGlobalSettingRepository;
 import interview.guide.modules.llmprovider.repository.LlmProviderRepository;
+import interview.guide.modules.llmprovider.repository.LlmUserSettingRepository;
 import interview.guide.modules.llmprovider.service.ApiKeyEncryptionService;
 import io.micrometer.observation.ObservationRegistry;
 import lombok.extern.slf4j.Slf4j;
@@ -53,7 +58,10 @@ public class LlmProviderRegistry {
     private final Map<String, EmbeddingModel> embeddingModelCache = new ConcurrentHashMap<>();
     private final LlmProviderRepository providerRepository;
     private final LlmGlobalSettingRepository globalSettingRepository;
+    private final LlmUserSettingRepository userSettingRepository;
     private final ApiKeyEncryptionService encryptionService;
+    private final CurrentUserService currentUserService;
+    private final UserRepository userRepository;
 
     private final ToolCallingManager toolCallingManager;
     private final ObservationRegistry observationRegistry;
@@ -71,14 +79,20 @@ public class LlmProviderRegistry {
             LlmProviderProperties properties,
             LlmProviderRepository providerRepository,
             LlmGlobalSettingRepository globalSettingRepository,
+            LlmUserSettingRepository userSettingRepository,
             ApiKeyEncryptionService encryptionService,
+            CurrentUserService currentUserService,
+            UserRepository userRepository,
             @Autowired(required = false) ToolCallingManager toolCallingManager,
             @Autowired(required = false) ObservationRegistry observationRegistry,
             @Autowired(required = false) @Qualifier("interviewSkillsToolCallback") ToolCallback interviewSkillsToolCallback) {
         this.properties = properties;
         this.providerRepository = providerRepository;
         this.globalSettingRepository = globalSettingRepository;
+        this.userSettingRepository = userSettingRepository;
         this.encryptionService = encryptionService;
+        this.currentUserService = currentUserService;
+        this.userRepository = userRepository;
         this.toolCallingManager = toolCallingManager;
         this.observationRegistry = observationRegistry;
         this.interviewSkillsToolCallback = interviewSkillsToolCallback;
@@ -89,7 +103,8 @@ public class LlmProviderRegistry {
             ToolCallingManager toolCallingManager,
             ObservationRegistry observationRegistry,
             ToolCallback interviewSkillsToolCallback) {
-        this(properties, null, null, null, toolCallingManager, observationRegistry, interviewSkillsToolCallback);
+        this(properties, null, null, null, null, null, null,
+            toolCallingManager, observationRegistry, interviewSkillsToolCallback);
     }
 
     /**
@@ -116,6 +131,10 @@ public class LlmProviderRegistry {
         return getChatClient(resolveDefaultChatProviderId());
     }
 
+    public ChatClient getDefaultChatClientForUser(Long userId) {
+        return getChatClient(resolveDefaultChatProviderIdForUser(userId));
+    }
+
     /**
      * Get a ChatClient for the specified provider, falling back to the default if null or blank.
      */
@@ -133,6 +152,10 @@ public class LlmProviderRegistry {
     public ChatClient getPlainChatClient(String providerId) {
         String id = resolveProviderId(providerId);
         return clientCache.computeIfAbsent(id + ":plain", key -> createPlainChatClient(id));
+    }
+
+    public String resolveChatProviderIdOrDefault(String providerId) {
+        return resolveProviderId(providerId);
     }
 
     /**
@@ -335,8 +358,17 @@ public class LlmProviderRegistry {
     }
 
     private String resolveDefaultChatProviderId() {
-        if (globalSettingRepository == null) {
+        if (globalSettingRepository == null || userSettingRepository == null || currentUserService == null) {
             return properties.getDefaultProvider();
+        }
+        Optional<CurrentUser> currentUser = currentUserService.currentUser();
+        if (currentUser.isPresent() && !currentUser.get().isAdmin()) {
+            Long userId = currentUser.get().id();
+            return userSettingRepository.findById(userId)
+                .map(LlmUserSettingEntity::getDefaultChatProviderId)
+                .filter(id -> !isBlank(id))
+                .orElseThrow(() -> new BusinessException(ErrorCode.PROVIDER_NOT_FOUND,
+                    "当前账号未设置默认模型，请先在系统设置中新增 Provider 并设为文字服务"));
         }
         return globalSettingRepository.findById(LlmGlobalSettingEntity.SINGLETON_ID)
             .map(LlmGlobalSettingEntity::getDefaultChatProviderId)
@@ -344,11 +376,40 @@ public class LlmProviderRegistry {
             .orElse(properties.getDefaultProvider());
     }
 
+    private String resolveDefaultChatProviderIdForUser(Long userId) {
+        if (userId == null) {
+            throw new BusinessException(ErrorCode.PROVIDER_NOT_FOUND, "当前数据没有用户归属，无法解析默认模型");
+        }
+        if (globalSettingRepository == null || userSettingRepository == null || userRepository == null) {
+            return properties.getDefaultProvider();
+        }
+        if (userRepository.hasAdminRole(userId)) {
+            return globalSettingRepository.findById(LlmGlobalSettingEntity.SINGLETON_ID)
+                .map(LlmGlobalSettingEntity::getDefaultChatProviderId)
+                .filter(id -> !isBlank(id))
+                .orElse(properties.getDefaultProvider());
+        }
+        return userSettingRepository.findById(userId)
+            .map(LlmUserSettingEntity::getDefaultChatProviderId)
+            .filter(id -> !isBlank(id))
+            .orElseThrow(() -> new BusinessException(ErrorCode.PROVIDER_NOT_FOUND,
+                "当前账号未设置默认模型，请先在系统设置中新增 Provider 并设为文字服务"));
+    }
+
     private String resolveDefaultEmbeddingProviderId() {
-        if (globalSettingRepository == null) {
+        if (globalSettingRepository == null || userSettingRepository == null || currentUserService == null) {
             return !isBlank(properties.getDefaultEmbeddingProvider())
                 ? properties.getDefaultEmbeddingProvider()
                 : properties.getDefaultProvider();
+        }
+        Optional<CurrentUser> currentUser = currentUserService.currentUser();
+        if (currentUser.isPresent() && !currentUser.get().isAdmin()) {
+            Long userId = currentUser.get().id();
+            return userSettingRepository.findById(userId)
+                .map(LlmUserSettingEntity::getDefaultEmbeddingProviderId)
+                .filter(id -> !isBlank(id))
+                .orElseThrow(() -> new BusinessException(ErrorCode.PROVIDER_NOT_FOUND,
+                    "当前账号未设置默认向量模型，请先在系统设置中新增支持 Embedding 的 Provider 并设为向量服务"));
         }
         return globalSettingRepository.findById(LlmGlobalSettingEntity.SINGLETON_ID)
             .map(LlmGlobalSettingEntity::getDefaultEmbeddingProviderId)

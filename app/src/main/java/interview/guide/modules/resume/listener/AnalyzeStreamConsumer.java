@@ -95,12 +95,12 @@ public class AnalyzeStreamConsumer extends AbstractStreamConsumer<AnalyzeStreamC
             return;
         }
 
-        ResumeAnalysisResponse analysis = gradingService.analyzeResume(payload.content());
         ResumeEntity resume = resumeRepository.findById(resumeId).orElse(null);
         if (resume == null) {
             log.warn("简历在分析期间被删除，跳过保存结果: resumeId={}", resumeId);
             return;
         }
+        ResumeAnalysisResponse analysis = gradingService.analyzeResume(payload.content(), resume.getUserId());
         persistenceService.saveAnalysis(resume, analysis);
     }
 

@@ -18,6 +18,7 @@ import interview.guide.modules.interview.model.InterviewSessionEntity;
 import interview.guide.modules.interview.model.SubmitAnswerRequest;
 import interview.guide.modules.interview.model.SubmitAnswerResponse;
 import interview.guide.modules.interview.model.InterviewSessionDTO.SessionStatus;
+import interview.guide.modules.resume.service.ResumePersistenceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
@@ -46,6 +47,7 @@ public class InterviewSessionService {
     private final ObjectMapper objectMapper;
     private final EvaluateStreamProducer evaluateStreamProducer;
     private final LlmProviderRegistry llmProviderRegistry;
+    private final ResumePersistenceService resumePersistenceService;
 
     /**
      * 创建新的面试会话
@@ -53,6 +55,8 @@ public class InterviewSessionService {
      * 前端应该先调用 findUnfinishedSession 检查，或者使用 forceCreate 参数强制创建
      */
     public InterviewSessionDTO createSession(CreateInterviewRequest request) {
+        ensureResumeAccessible(request.resumeId());
+
         // 如果指定了resumeId且未强制创建，检查是否有未完成的会话
         if (request.resumeId() != null && !Boolean.TRUE.equals(request.forceCreate())) {
             Optional<InterviewSessionDTO> unfinishedOpt = findUnfinishedSession(request.resumeId());
@@ -74,9 +78,11 @@ public class InterviewSessionService {
         List<HistoricalQuestion> historicalQuestions =
             persistenceService.getHistoricalQuestions(skillId, request.resumeId());
 
+        String resolvedLlmProvider = llmProviderRegistry.resolveChatProviderIdOrDefault(request.llmProvider());
+
         // 基于 Skill 生成面试问题
         List<InterviewQuestionDTO> questions = questionService.generateQuestionsBySkill(
-            request.llmProvider(),
+            resolvedLlmProvider,
             skillId,
             difficulty,
             request.resumeText(),
@@ -99,7 +105,7 @@ public class InterviewSessionService {
         // 保存到数据库
         try {
             persistenceService.saveSession(sessionId, request.resumeId(),
-                questions.size(), questions, request.llmProvider(), skillId, difficulty);
+                questions.size(), questions, resolvedLlmProvider, skillId, difficulty);
         } catch (Exception e) {
             log.warn("保存面试会话到数据库失败: {}", e.getMessage());
         }
@@ -118,6 +124,8 @@ public class InterviewSessionService {
      * 获取会话信息（优先从缓存获取，缓存未命中则从数据库恢复）
      */
     public InterviewSessionDTO getSession(String sessionId) {
+        assertSessionAccessible(sessionId);
+
         // 1. 尝试从 Redis 缓存获取
         Optional<CachedSession> cachedOpt = sessionCache.getSession(sessionId);
         if (cachedOpt.isPresent()) {
@@ -427,6 +435,8 @@ public class InterviewSessionService {
      * 获取或恢复会话（优先从缓存获取）
      */
     private CachedSession getOrRestoreSession(String sessionId) {
+        assertSessionAccessible(sessionId);
+
         // 1. 尝试从 Redis 缓存获取
         Optional<CachedSession> cachedOpt = sessionCache.getSession(sessionId);
         if (cachedOpt.isPresent()) {
@@ -499,5 +509,18 @@ public class InterviewSessionService {
             questions,
             session.getStatus()
         );
+    }
+
+    private void ensureResumeAccessible(Long resumeId) {
+        if (resumeId == null) {
+            return;
+        }
+        resumePersistenceService.findById(resumeId)
+            .orElseThrow(() -> new BusinessException(ErrorCode.RESUME_NOT_FOUND, "简历不存在"));
+    }
+
+    private void assertSessionAccessible(String sessionId) {
+        persistenceService.findBySessionId(sessionId)
+            .orElseThrow(() -> new BusinessException(ErrorCode.INTERVIEW_SESSION_NOT_FOUND));
     }
 }

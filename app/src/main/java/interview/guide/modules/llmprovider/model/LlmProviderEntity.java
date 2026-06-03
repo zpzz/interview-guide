@@ -6,6 +6,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import jakarta.persistence.Index;
 import java.time.LocalDateTime;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -17,12 +18,20 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 @Entity
-@Table(name = "llm_provider_config")
+@Table(name = "llm_provider_config", indexes = {
+    @Index(name = "idx_llm_provider_owner", columnList = "owner_user_id,id")
+})
 public class LlmProviderEntity {
 
   @Id
   @Column(length = 64)
   private String id;
+
+  @Column(name = "owner_user_id")
+  private Long ownerUserId;
+
+  @Column(name = "display_id", length = 64)
+  private String displayId;
 
   @Column(name = "base_url", nullable = false, length = 512)
   private String baseUrl;
@@ -64,6 +73,9 @@ public class LlmProviderEntity {
     LocalDateTime now = LocalDateTime.now();
     createdAt = now;
     updatedAt = now;
+    if (displayId == null || displayId.isBlank()) {
+      displayId = id;
+    }
   }
 
   @PreUpdate

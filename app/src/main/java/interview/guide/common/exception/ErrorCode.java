@@ -17,6 +17,13 @@ public enum ErrorCode {
     NOT_FOUND(404, "资源不存在"),
     METHOD_NOT_ALLOWED(405, "请求方法不支持"),
     INTERNAL_ERROR(500, "服务器内部错误"),
+    USERNAME_OR_PASSWORD_INVALID(1001, "账号或密码错误"),
+    USER_DISABLED(1002, "账号已禁用"),
+    USER_NOT_FOUND(1003, "用户不存在"),
+    USER_ALREADY_EXISTS(1004, "用户已存在"),
+    PROTECTED_USER_CANNOT_MODIFY(1005, "内置保护账号不可修改"),
+    CURRENT_USER_CANNOT_DELETE(1006, "不能删除当前登录用户"),
+    CURRENT_USER_ADMIN_ROLE_REQUIRED(1007, "不能移除当前管理员的管理员角色"),
     
     // ========== 简历模块错误 2xxx ==========
     RESUME_NOT_FOUND(2001, "简历不存在"),

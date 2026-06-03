@@ -6,6 +6,7 @@ import {
   Loader2, Eye, EyeOff, RefreshCw, Server, Edit2, Mic, Volume2, ChevronDown, Database,
 } from 'lucide-react';
 import { llmProviderApi } from '../api/llmProvider';
+import { isCurrentUserAdmin } from '../api/request';
 import ConfirmDialog from '../components/ConfirmDialog';
 import type {
   ProviderItem, CreateProviderRequest, UpdateProviderRequest,
@@ -138,6 +139,7 @@ function ConfigRow({ label, value, title, monospace = false, emphasis = false }:
 }
 
 export default function SettingsPage() {
+  const isAdmin = isCurrentUserAdmin();
   const [providers, setProviders] = useState<ProviderItem[]>([]);
   const [defaultProviderId, setDefaultProviderId] = useState('');
   const [defaultEmbeddingProviderId, setDefaultEmbeddingProviderId] = useState('');
@@ -214,24 +216,31 @@ export default function SettingsPage() {
 
   const loadData = useCallback(async () => {
     try {
-      const [providerList, defaultProvider, asr, tts] = await Promise.all([
+      const [providerList, defaultProvider] = await Promise.all([
         llmProviderApi.list(),
         llmProviderApi.getDefaultProvider(),
-        llmProviderApi.getAsrConfig(),
-        llmProviderApi.getTtsConfig(),
       ]);
       setProviders(providerList);
       setDefaultProviderId(defaultProvider.defaultProvider);
       setDefaultEmbeddingProviderId(defaultProvider.defaultEmbeddingProvider);
-      setAsrConfig(asr);
-      setTtsConfig(tts);
+      if (isAdmin) {
+        const [asr, tts] = await Promise.all([
+          llmProviderApi.getAsrConfig(),
+          llmProviderApi.getTtsConfig(),
+        ]);
+        setAsrConfig(asr);
+        setTtsConfig(tts);
+      } else {
+        setAsrConfig(null);
+        setTtsConfig(null);
+      }
     } catch (err) {
       console.error('Failed to load settings:', err);
       showToast('加载数据失败', 'error');
     } finally {
       setLoading(false);
     }
-  }, [showToast]);
+  }, [isAdmin, showToast]);
 
   useEffect(() => {
     loadData();
@@ -734,6 +743,7 @@ export default function SettingsPage() {
               )}
 
               {/* Voice service cards */}
+              {isAdmin && (
               <div className="mt-6">
                 <h2 className="text-lg font-bold text-slate-800 dark:text-white mb-4">
                   语音服务
@@ -864,6 +874,7 @@ export default function SettingsPage() {
                   )}
                 </div>
               </div>
+              )}
           </motion.div>
         </AnimatePresence>
       )}

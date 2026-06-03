@@ -22,6 +22,10 @@ public class InterviewSessionEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    // 创建该面试会话的用户 ID
+    @Column(name = "user_id")
+    private Long userId;
     
     // 会话ID (UUID)
     @Column(nullable = false, unique = true, length = 36)
@@ -121,6 +125,14 @@ public class InterviewSessionEntity {
     
     public void setId(Long id) {
         this.id = id;
+    }
+
+    public Long getUserId() {
+        return userId;
+    }
+
+    public void setUserId(Long userId) {
+        this.userId = userId;
     }
     
     public String getSessionId() {

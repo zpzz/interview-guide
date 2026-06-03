@@ -1,9 +1,23 @@
 import {Link, Outlet, useLocation, useNavigate} from 'react-router-dom';
 import {motion} from 'framer-motion';
-import {Calendar, ChevronRight, Database, FileStack, MessageSquare, Moon, Settings, Sparkles, Sun, Users,} from 'lucide-react';
+import {
+  Calendar,
+  ChevronRight,
+  Database,
+  FileStack,
+  LogOut,
+  MessageSquare,
+  Moon,
+  Settings,
+  Sparkles,
+  Sun,
+  UserCog,
+  Users,
+} from 'lucide-react';
 import {useTheme} from '../hooks/useTheme';
 import {useState} from 'react';
 import UnifiedInterviewModal, {UnifiedInterviewConfig} from './UnifiedInterviewModal';
+import {clearAuthToken, isCurrentUserAdmin} from '../api/request';
 
 interface NavItem {
   id: string;
@@ -24,6 +38,7 @@ export default function Layout() {
   const currentPath = location.pathname;
   const {theme, toggleTheme} = useTheme();
   const navigate = useNavigate();
+  const isAdmin = isCurrentUserAdmin();
   const [interviewModalPreset, setInterviewModalPreset] = useState<{
     defaultMode: 'text' | 'voice';
     defaultResumeId?: number;
@@ -79,6 +94,11 @@ export default function Layout() {
     });
   };
 
+  const handleLogout = () => {
+    clearAuthToken();
+    navigate('/login', {replace: true});
+  };
+
   // 按业务模块组织的导航项
   const navGroups: NavGroup[] = [
     {
@@ -104,6 +124,9 @@ export default function Layout() {
       title: '系统',
       items: [
         { id: 'settings', path: '/settings', label: '设置', icon: Settings, description: '管理模型和语音服务' },
+        ...(isAdmin ? [
+          { id: 'admin-users', path: '/admin/users', label: '用户管理', icon: UserCog, description: '管理账号和角色' },
+        ] : []),
       ],
     },
   ];
@@ -135,15 +158,24 @@ export default function Layout() {
       <aside className="w-64 bg-white dark:bg-slate-900 border-r border-slate-100 dark:border-slate-700 fixed h-screen left-0 top-0 z-50 flex flex-col">
         {/* Logo */}
         <div className="p-6 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between">
-          <Link to="/history" className="flex items-center gap-3">
+          <Link to="/history" className="flex min-w-0 items-center gap-3">
             <div className="w-10 h-10 bg-gradient-to-br from-primary-500 to-primary-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-primary-500/30">
               <Sparkles className="w-5 h-5" />
             </div>
-            <div>
+            <div className="min-w-0">
               <span className="text-lg font-bold text-slate-800 dark:text-white tracking-tight block">AI Interview</span>
               <span className="text-xs text-slate-400 dark:text-slate-500">智能面试助手</span>
             </div>
           </Link>
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="ml-3 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500 dark:text-slate-500 dark:hover:bg-red-900/20 dark:hover:text-red-300"
+            title="退出登录"
+            aria-label="退出登录"
+          >
+            <LogOut className="h-4.5 w-4.5" />
+          </button>
         </div>
 
         {/* 主题切换按钮 */}

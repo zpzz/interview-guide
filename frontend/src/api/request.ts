@@ -1,5 +1,7 @@
 import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
 
+const AUTH_TOKEN_COOKIE = 'interview_auth_token';
+
 /**
  * 后端统一响应结构
  */
@@ -14,6 +16,81 @@ const baseURL = import.meta.env.PROD ? '' : 'http://localhost:8080';
 const instance: AxiosInstance = axios.create({
   baseURL,
   timeout: 60000,
+});
+
+export function setAuthToken(token: string, remember = true): void {
+  const maxAge = remember ? '; max-age=604800' : '';
+  document.cookie = `${AUTH_TOKEN_COOKIE}=${encodeURIComponent(token)}; path=/${maxAge}; SameSite=Lax`;
+}
+
+export function getAuthToken(): string | null {
+  const tokenCookie = document.cookie
+    .split('; ')
+    .find((item) => item.startsWith(`${AUTH_TOKEN_COOKIE}=`));
+  if (!tokenCookie) {
+    return null;
+  }
+  return decodeURIComponent(tokenCookie.substring(AUTH_TOKEN_COOKIE.length + 1));
+}
+
+export function getCurrentUserRoles(): string[] {
+  const token = getAuthToken();
+  if (!token) {
+    return [];
+  }
+  const parts = token.split('.');
+  if (parts.length !== 3) {
+    return [];
+  }
+  try {
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, '=');
+    const payload = JSON.parse(decodeURIComponent(escape(window.atob(padded))));
+    return Array.isArray(payload.roles) ? payload.roles : [];
+  } catch {
+    return [];
+  }
+}
+
+export function getCurrentUserId(): number | null {
+  const token = getAuthToken();
+  if (!token) {
+    return null;
+  }
+  const parts = token.split('.');
+  if (parts.length !== 3) {
+    return null;
+  }
+  try {
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, '=');
+    const payload = JSON.parse(decodeURIComponent(escape(window.atob(padded))));
+    const userId = Number(payload.sub);
+    return Number.isFinite(userId) ? userId : null;
+  } catch {
+    return null;
+  }
+}
+
+export function isCurrentUserAdmin(): boolean {
+  return getCurrentUserRoles().includes('ADMIN');
+}
+
+export function clearAuthToken(): void {
+  document.cookie = `${AUTH_TOKEN_COOKIE}=; path=/; max-age=0; SameSite=Lax`;
+}
+
+export function getAuthHeaders(): Record<string, string> {
+  const token = getAuthToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+instance.interceptors.request.use((config) => {
+  const token = getAuthToken();
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
 });
 
 /**

@@ -85,6 +85,10 @@ public class ResumeGradingService {
      * @return 分析结果
      */
     public ResumeAnalysisResponse analyzeResume(String resumeText) {
+        return analyzeResume(resumeText, null);
+    }
+
+    public ResumeAnalysisResponse analyzeResume(String resumeText, Long userId) {
         log.info("开始分析简历，文本长度: {} 字符", resumeText.length());
         
         try {
@@ -102,7 +106,9 @@ public class ResumeGradingService {
             // 调用AI
             ResumeAnalysisResponseDTO dto;
             try {
-                ChatClient chatClient = llmProviderRegistry.getDefaultChatClient();
+                ChatClient chatClient = userId == null
+                    ? llmProviderRegistry.getDefaultChatClient()
+                    : llmProviderRegistry.getDefaultChatClientForUser(userId);
                 dto = structuredOutputInvoker.invoke(
                     chatClient,
                     systemPromptWithFormat,

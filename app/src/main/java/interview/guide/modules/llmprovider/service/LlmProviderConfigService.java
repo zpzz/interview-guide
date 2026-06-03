@@ -2,6 +2,7 @@ package interview.guide.modules.llmprovider.service;
 
 import interview.guide.common.ai.ApiPathResolver;
 import interview.guide.common.ai.LlmProviderRegistry;
+import interview.guide.common.auth.CurrentUserService;
 import interview.guide.common.config.LlmProviderProperties;
 import interview.guide.common.config.LlmProviderProperties.ProviderConfig;
 import interview.guide.common.exception.BusinessException;
@@ -17,8 +18,10 @@ import interview.guide.modules.llmprovider.dto.TtsConfigRequest;
 import interview.guide.modules.llmprovider.dto.UpdateProviderRequest;
 import interview.guide.modules.llmprovider.model.LlmGlobalSettingEntity;
 import interview.guide.modules.llmprovider.model.LlmProviderEntity;
+import interview.guide.modules.llmprovider.model.LlmUserSettingEntity;
 import interview.guide.modules.llmprovider.repository.LlmGlobalSettingRepository;
 import interview.guide.modules.llmprovider.repository.LlmProviderRepository;
+import interview.guide.modules.llmprovider.repository.LlmUserSettingRepository;
 import interview.guide.modules.voiceinterview.config.VoiceInterviewProperties;
 import interview.guide.modules.voiceinterview.service.QwenAsrService;
 import interview.guide.modules.voiceinterview.service.QwenTtsService;
@@ -57,7 +60,9 @@ public class LlmProviderConfigService {
   private final LlmProviderRegistry registry;
   private final LlmProviderRepository providerRepository;
   private final LlmGlobalSettingRepository globalSettingRepository;
+  private final LlmUserSettingRepository userSettingRepository;
   private final ApiKeyEncryptionService encryptionService;
+  private final CurrentUserService currentUserService;
   private final String yamlPath;
   private final String envPath;
   private final ReentrantReadWriteLock rwLock = new ReentrantReadWriteLock();
@@ -79,7 +84,9 @@ public class LlmProviderConfigService {
       LlmProviderRegistry registry,
       LlmProviderRepository providerRepository,
       LlmGlobalSettingRepository globalSettingRepository,
+      LlmUserSettingRepository userSettingRepository,
       ApiKeyEncryptionService encryptionService,
+      CurrentUserService currentUserService,
       VoiceInterviewProperties voiceProperties,
       QwenAsrService asrService,
       QwenTtsService ttsService) {
@@ -87,7 +94,9 @@ public class LlmProviderConfigService {
     this.registry = registry;
     this.providerRepository = providerRepository;
     this.globalSettingRepository = globalSettingRepository;
+    this.userSettingRepository = userSettingRepository;
     this.encryptionService = encryptionService;
+    this.currentUserService = currentUserService;
     this.yamlPath = properties.getConfigYamlPath();
     this.envPath = properties.getConfigEnvPath();
     this.voiceProperties = voiceProperties;
@@ -101,7 +110,7 @@ public class LlmProviderConfigService {
       VoiceInterviewProperties voiceProperties,
       QwenAsrService asrService,
       QwenTtsService ttsService) {
-    this(properties, registry, null, null, null, voiceProperties, asrService, ttsService);
+    this(properties, registry, null, null, null, null, null, voiceProperties, asrService, ttsService);
   }
 
   @PostConstruct
@@ -156,10 +165,15 @@ public class LlmProviderConfigService {
                 .build())
             .toList();
       }
-      LlmGlobalSettingEntity setting = getGlobalSettingOrThrow();
-      return providerRepository.findAll().stream()
+      boolean admin = currentUserService.isAdmin();
+      LlmGlobalSettingEntity globalSetting = admin ? getGlobalSettingOrThrow() : null;
+      LlmUserSettingEntity userSetting = admin ? null : getOrCreateUserSetting(currentUserService.currentUserId());
+      List<LlmProviderEntity> providers = admin
+          ? providerRepository.findByOwnerUserIdIsNullOrderByIdAsc()
+          : providerRepository.findByOwnerUserIdOrderByDisplayIdAsc(currentUserService.currentUserId());
+      return providers.stream()
           .map(provider -> ProviderDTO.builder()
-              .id(provider.getId())
+              .id(displayProviderId(provider))
               .baseUrl(provider.getBaseUrl())
               .maskedApiKey(maskApiKey(decryptApiKey(provider)))
               .model(provider.getModel())
@@ -167,8 +181,12 @@ public class LlmProviderConfigService {
               .embeddingDimensions(resolveEmbeddingDimensions(provider.getEmbeddingDimensions()))
               .supportsEmbedding(provider.isSupportsEmbedding())
               .temperature(provider.getTemperature())
-              .defaultChatProvider(provider.getId().equals(setting.getDefaultChatProviderId()))
-              .defaultEmbeddingProvider(provider.getId().equals(setting.getDefaultEmbeddingProviderId()))
+              .defaultChatProvider(admin
+                  ? provider.getId().equals(globalSetting.getDefaultChatProviderId())
+                  : provider.getId().equals(userSetting.getDefaultChatProviderId()))
+              .defaultEmbeddingProvider(admin
+                  ? provider.getId().equals(globalSetting.getDefaultEmbeddingProviderId())
+                  : provider.getId().equals(userSetting.getDefaultEmbeddingProviderId()))
               .build())
           .toList();
     } finally {
@@ -195,10 +213,12 @@ public class LlmProviderConfigService {
             .defaultEmbeddingProvider(id.equals(properties.getDefaultEmbeddingProvider()))
             .build();
       }
-      LlmGlobalSettingEntity setting = getGlobalSettingOrThrow();
-      LlmProviderEntity provider = getProviderEntityOrThrow(id);
+      boolean admin = currentUserService.isAdmin();
+      LlmGlobalSettingEntity globalSetting = admin ? getGlobalSettingOrThrow() : null;
+      LlmUserSettingEntity userSetting = admin ? null : getOrCreateUserSetting(currentUserService.currentUserId());
+      LlmProviderEntity provider = getVisibleProviderEntityOrThrow(id);
       return ProviderDTO.builder()
-          .id(id)
+          .id(displayProviderId(provider))
           .baseUrl(provider.getBaseUrl())
           .maskedApiKey(maskApiKey(decryptApiKey(provider)))
           .model(provider.getModel())
@@ -206,8 +226,12 @@ public class LlmProviderConfigService {
           .embeddingDimensions(resolveEmbeddingDimensions(provider.getEmbeddingDimensions()))
           .supportsEmbedding(provider.isSupportsEmbedding())
           .temperature(provider.getTemperature())
-          .defaultChatProvider(id.equals(setting.getDefaultChatProviderId()))
-          .defaultEmbeddingProvider(id.equals(setting.getDefaultEmbeddingProviderId()))
+          .defaultChatProvider(admin
+              ? provider.getId().equals(globalSetting.getDefaultChatProviderId())
+              : provider.getId().equals(userSetting.getDefaultChatProviderId()))
+          .defaultEmbeddingProvider(admin
+              ? provider.getId().equals(globalSetting.getDefaultEmbeddingProviderId())
+              : provider.getId().equals(userSetting.getDefaultEmbeddingProviderId()))
           .build();
     } finally {
       rwLock.readLock().unlock();
@@ -220,10 +244,16 @@ public class LlmProviderConfigService {
       if (!isDatabaseBacked()) {
         return new DefaultProviderDTO(properties.getDefaultProvider(), properties.getDefaultEmbeddingProvider());
       }
-      LlmGlobalSettingEntity setting = getGlobalSettingOrThrow();
+      if (currentUserService.isAdmin()) {
+        LlmGlobalSettingEntity setting = getGlobalSettingOrThrow();
+        return new DefaultProviderDTO(
+            setting.getDefaultChatProviderId(),
+            setting.getDefaultEmbeddingProviderId());
+      }
+      LlmUserSettingEntity setting = getOrCreateUserSetting(currentUserService.currentUserId());
       return new DefaultProviderDTO(
-          setting.getDefaultChatProviderId(),
-          setting.getDefaultEmbeddingProviderId());
+          toDisplayProviderId(setting.getDefaultChatProviderId()),
+          toDisplayProviderId(setting.getDefaultEmbeddingProviderId()));
     } finally {
       rwLock.readLock().unlock();
     }
@@ -322,7 +352,9 @@ public class LlmProviderConfigService {
         return;
       }
       String providerId = trimOrNull(request.id());
-      if (providerRepository.existsById(providerId)) {
+      Long ownerUserId = currentUserService.isAdmin() ? null : currentUserService.currentUserId();
+      String storageProviderId = toStorageProviderId(providerId, ownerUserId);
+      if (providerExists(providerId, ownerUserId)) {
         throw new BusinessException(ErrorCode.PROVIDER_ALREADY_EXISTS,
             "Provider '" + request.id() + "' 已存在");
       }
@@ -338,7 +370,9 @@ public class LlmProviderConfigService {
 
       ApiKeyEncryptionService.EncryptedValue encrypted = encryptionService.encrypt(apiKey);
       providerRepository.save(LlmProviderEntity.builder()
-          .id(providerId)
+          .id(storageProviderId)
+          .ownerUserId(ownerUserId)
+          .displayId(providerId)
           .baseUrl(baseUrl)
           .apiKeyNonce(encrypted.nonce())
           .apiKeyCiphertext(encrypted.ciphertext())
@@ -351,7 +385,8 @@ public class LlmProviderConfigService {
           .builtin(false)
           .build());
       registry.reload();
-      log.info("Created provider: id={}, baseUrl={}, model={}", providerId, baseUrl, model);
+      log.info("Created provider: id={}, ownerUserId={}, baseUrl={}, model={}",
+          storageProviderId, ownerUserId, baseUrl, model);
     } finally {
       rwLock.writeLock().unlock();
     }
@@ -365,7 +400,7 @@ public class LlmProviderConfigService {
         updateProviderLegacy(id, request);
         return;
       }
-      LlmProviderEntity provider = getProviderEntityOrThrow(id);
+      LlmProviderEntity provider = getVisibleProviderEntityOrThrow(id);
 
       String trimmedBaseUrl = trimOrNull(request.baseUrl());
       if (request.baseUrl() != null && trimmedBaseUrl == null) {
@@ -392,7 +427,7 @@ public class LlmProviderConfigService {
         provider.setSupportsEmbedding(request.supportsEmbedding());
       }
       validateEmbeddingConfig(
-          id,
+          displayProviderId(provider),
           provider.isSupportsEmbedding(),
           provider.getEmbeddingModel(),
           resolveEmbeddingDimensions(provider.getEmbeddingDimensions()));
@@ -407,7 +442,7 @@ public class LlmProviderConfigService {
 
       providerRepository.save(provider);
       registry.reload();
-      log.info("Updated provider: id={}", id);
+      log.info("Updated provider: id={}, ownerUserId={}", provider.getId(), provider.getOwnerUserId());
     } finally {
       rwLock.writeLock().unlock();
     }
@@ -421,16 +456,28 @@ public class LlmProviderConfigService {
         deleteProviderLegacy(id);
         return;
       }
-      LlmGlobalSettingEntity setting = getGlobalSettingOrThrow();
-      if (id.equals(setting.getDefaultChatProviderId()) || id.equals(setting.getDefaultEmbeddingProviderId())) {
-        throw new BusinessException(ErrorCode.PROVIDER_DEFAULT_CANNOT_DELETE,
-            "默认 Provider '" + id + "' 不可删除，请先切换默认 Provider");
+      LlmProviderEntity provider = getVisibleProviderEntityOrThrow(id);
+      if (currentUserService.isAdmin()) {
+        LlmGlobalSettingEntity setting = getGlobalSettingOrThrow();
+        if (provider.getId().equals(setting.getDefaultChatProviderId())
+            || provider.getId().equals(setting.getDefaultEmbeddingProviderId())) {
+          throw new BusinessException(ErrorCode.PROVIDER_DEFAULT_CANNOT_DELETE,
+              "默认 Provider '" + id + "' 不可删除，请先切换默认 Provider");
+        }
+      } else {
+        LlmUserSettingEntity setting = getOrCreateUserSetting(currentUserService.currentUserId());
+        if (provider.getId().equals(setting.getDefaultChatProviderId())) {
+          setting.setDefaultChatProviderId(null);
+        }
+        if (provider.getId().equals(setting.getDefaultEmbeddingProviderId())) {
+          setting.setDefaultEmbeddingProviderId(null);
+        }
+        userSettingRepository.save(setting);
       }
-      getProviderEntityOrThrow(id);
 
-      providerRepository.deleteById(id);
+      providerRepository.delete(provider);
       registry.reload();
-      log.info("Deleted provider: id={}", id);
+      log.info("Deleted provider: id={}, ownerUserId={}", provider.getId(), provider.getOwnerUserId());
     } finally {
       rwLock.writeLock().unlock();
     }
@@ -444,16 +491,22 @@ public class LlmProviderConfigService {
         updateDefaultProviderLegacy(request);
         return;
       }
-      String providerId = trimOrNull(request.defaultProvider());
-      if (providerId == null) {
+      String requestedProviderId = trimOrNull(request.defaultProvider());
+      if (requestedProviderId == null) {
         throw new BusinessException(ErrorCode.BAD_REQUEST, "defaultProvider 不能为空");
       }
-      getProviderEntityOrThrow(providerId);
-      LlmGlobalSettingEntity setting = getGlobalSettingOrThrow();
-      setting.setDefaultChatProviderId(providerId);
-      globalSettingRepository.save(setting);
+      LlmProviderEntity provider = getVisibleProviderEntityOrThrow(requestedProviderId);
+      if (currentUserService.isAdmin()) {
+        LlmGlobalSettingEntity setting = getGlobalSettingOrThrow();
+        setting.setDefaultChatProviderId(provider.getId());
+        globalSettingRepository.save(setting);
+      } else {
+        LlmUserSettingEntity setting = getOrCreateUserSetting(currentUserService.currentUserId());
+        setting.setDefaultChatProviderId(provider.getId());
+        userSettingRepository.save(setting);
+      }
       registry.reload();
-      log.info("Updated default provider: {}", providerId);
+      log.info("Updated default provider: {}", provider.getId());
     } finally {
       rwLock.writeLock().unlock();
     }
@@ -463,26 +516,32 @@ public class LlmProviderConfigService {
   public void updateDefaultEmbeddingProvider(DefaultProviderDTO request) {
     rwLock.writeLock().lock();
     try {
-      String providerId = trimOrNull(request.defaultEmbeddingProvider());
-      if (providerId == null) {
+      String requestedProviderId = trimOrNull(request.defaultEmbeddingProvider());
+      if (requestedProviderId == null) {
         throw new BusinessException(ErrorCode.BAD_REQUEST, "defaultEmbeddingProvider 不能为空");
       }
-      LlmProviderEntity provider = getProviderEntityOrThrow(providerId);
+      LlmProviderEntity provider = getVisibleProviderEntityOrThrow(requestedProviderId);
       String embeddingModel = trimOrNull(provider.getEmbeddingModel());
       if (!provider.isSupportsEmbedding() || embeddingModel == null) {
         throw new BusinessException(ErrorCode.BAD_REQUEST,
-            "Provider '" + providerId + "' 不支持 Embedding，不能设为默认向量服务");
+            "Provider '" + displayProviderId(provider) + "' 不支持 Embedding，不能设为默认向量服务");
       }
       validateEmbeddingConfig(
-          providerId,
+          displayProviderId(provider),
           true,
           embeddingModel,
           resolveEmbeddingDimensions(provider.getEmbeddingDimensions()));
-      LlmGlobalSettingEntity setting = getGlobalSettingOrThrow();
-      setting.setDefaultEmbeddingProviderId(providerId);
-      globalSettingRepository.save(setting);
+      if (currentUserService.isAdmin()) {
+        LlmGlobalSettingEntity setting = getGlobalSettingOrThrow();
+        setting.setDefaultEmbeddingProviderId(provider.getId());
+        globalSettingRepository.save(setting);
+      } else {
+        LlmUserSettingEntity setting = getOrCreateUserSetting(currentUserService.currentUserId());
+        setting.setDefaultEmbeddingProviderId(provider.getId());
+        userSettingRepository.save(setting);
+      }
       registry.reload();
-      log.info("Updated default embedding provider: {}", providerId);
+      log.info("Updated default embedding provider: {}", provider.getId());
     } finally {
       rwLock.writeLock().unlock();
     }
@@ -557,7 +616,50 @@ public class LlmProviderConfigService {
   // ===== Internal helpers =====
 
   private boolean isDatabaseBacked() {
-    return providerRepository != null && globalSettingRepository != null && encryptionService != null;
+    return providerRepository != null
+        && globalSettingRepository != null
+        && userSettingRepository != null
+        && encryptionService != null
+        && currentUserService != null;
+  }
+
+  private boolean providerExists(String displayId, Long ownerUserId) {
+    if (ownerUserId == null) {
+      return providerRepository.existsById(displayId);
+    }
+    return providerRepository.existsByOwnerUserIdAndDisplayId(ownerUserId, displayId);
+  }
+
+  private String toStorageProviderId(String displayId, Long ownerUserId) {
+    if (ownerUserId == null) {
+      return displayId;
+    }
+    return "u" + ownerUserId + ":" + displayId;
+  }
+
+  private String displayProviderId(LlmProviderEntity provider) {
+    if (provider.getDisplayId() != null && !provider.getDisplayId().isBlank()) {
+      return provider.getDisplayId();
+    }
+    return toDisplayProviderId(provider.getId());
+  }
+
+  private String toDisplayProviderId(String storageProviderId) {
+    if (storageProviderId == null) {
+      return null;
+    }
+    int separatorIndex = storageProviderId.indexOf(':');
+    if (separatorIndex < 0) {
+      return storageProviderId;
+    }
+    return storageProviderId.substring(separatorIndex + 1);
+  }
+
+  private LlmUserSettingEntity getOrCreateUserSetting(Long userId) {
+    return userSettingRepository.findById(userId)
+        .orElseGet(() -> userSettingRepository.save(LlmUserSettingEntity.builder()
+            .userId(userId)
+            .build()));
   }
 
   private Map<String, ProviderConfig> getLegacyProvidersOrThrow() {
@@ -681,6 +783,19 @@ public class LlmProviderConfigService {
             "Provider '" + id + "' 不存在"));
   }
 
+  LlmProviderEntity getVisibleProviderEntityOrThrow(String id) {
+    if (currentUserService.isAdmin()) {
+      return providerRepository.findById(id)
+          .filter(provider -> provider.getOwnerUserId() == null)
+          .orElseThrow(() -> new BusinessException(ErrorCode.PROVIDER_NOT_FOUND,
+              "Provider '" + id + "' 不存在"));
+    }
+    Long userId = currentUserService.currentUserId();
+    return providerRepository.findByOwnerUserIdAndDisplayId(userId, id)
+        .orElseThrow(() -> new BusinessException(ErrorCode.PROVIDER_NOT_FOUND,
+            "Provider '" + id + "' 不存在"));
+  }
+
   private LlmGlobalSettingEntity getGlobalSettingOrThrow() {
     return globalSettingRepository.findById(LlmGlobalSettingEntity.SINGLETON_ID)
         .orElseThrow(() -> new BusinessException(ErrorCode.PROVIDER_CONFIG_READ_FAILED,
@@ -688,7 +803,7 @@ public class LlmProviderConfigService {
   }
 
   private ProviderRuntimeConfig getProviderRuntimeConfigOrThrow(String id) {
-    LlmProviderEntity provider = getProviderEntityOrThrow(id);
+    LlmProviderEntity provider = getVisibleProviderEntityOrThrow(id);
     return new ProviderRuntimeConfig(
         provider.getBaseUrl(),
         decryptApiKey(provider),
