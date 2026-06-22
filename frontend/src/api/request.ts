@@ -18,6 +18,10 @@ const instance: AxiosInstance = axios.create({
   timeout: 60000,
 });
 
+export function getApiBaseUrl(): string {
+  return baseURL;
+}
+
 export function setAuthToken(token: string, remember = true): void {
   const maxAge = remember ? '; max-age=604800' : '';
   document.cookie = `${AUTH_TOKEN_COOKIE}=${encodeURIComponent(token)}; path=/${maxAge}; SameSite=Lax`;
@@ -119,6 +123,10 @@ instance.interceptors.response.use(
     return response;
   },
   (error) => {
+    if (error.code === 'ECONNABORTED' || /timeout/i.test(error.message ?? '')) {
+      return Promise.reject(new Error('请求超时，请稍后重试'));
+    }
+
     // 有响应的情况：后端返回了结果（即使是错误）
     if (error.response) {
       const { data } = error.response;

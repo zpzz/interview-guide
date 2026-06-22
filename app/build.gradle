@@ -63,6 +63,8 @@ dependencies {
     // PDF导出 - iText 8
     implementation "com.itextpdf:itext-core:${libs.versions.itext.get()}"
     implementation "com.itextpdf:font-asian:${libs.versions.itext.get()}"
+    implementation 'com.openhtmltopdf:openhtmltopdf-pdfbox:1.0.10'
+    implementation 'org.jsoup:jsoup:1.18.1'
 
     // Aliyun DashScope SDK for Qwen3 ASR/TTS (replaces NLS SDK)
     implementation('com.alibaba:dashscope-sdk-java:2.22.7') {

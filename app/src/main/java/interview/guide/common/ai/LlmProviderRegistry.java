@@ -7,10 +7,10 @@ import interview.guide.common.auth.CurrentUser;
 import interview.guide.common.auth.CurrentUserService;
 import interview.guide.common.exception.BusinessException;
 import interview.guide.common.exception.ErrorCode;
-import interview.guide.modules.account.repository.UserRepository;
 import interview.guide.modules.llmprovider.model.LlmGlobalSettingEntity;
 import interview.guide.modules.llmprovider.model.LlmProviderEntity;
 import interview.guide.modules.llmprovider.model.LlmUserSettingEntity;
+import interview.guide.modules.account.repository.UserRepository;
 import interview.guide.modules.llmprovider.repository.LlmGlobalSettingRepository;
 import interview.guide.modules.llmprovider.repository.LlmProviderRepository;
 import interview.guide.modules.llmprovider.repository.LlmUserSettingRepository;
@@ -36,6 +36,8 @@ import org.springframework.ai.retry.RetryUtils;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.core.retry.RetryPolicy;
+import org.springframework.core.retry.RetryTemplate;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -51,6 +53,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @Component
 @Slf4j
 public class LlmProviderRegistry {
+    private static final RetryTemplate NO_RETRY_TEMPLATE = createNoRetryTemplate();
 
     private final LlmProviderProperties properties;
     private final Map<String, ChatClient> clientCache = new ConcurrentHashMap<>();
@@ -59,9 +62,9 @@ public class LlmProviderRegistry {
     private final LlmProviderRepository providerRepository;
     private final LlmGlobalSettingRepository globalSettingRepository;
     private final LlmUserSettingRepository userSettingRepository;
+    private final UserRepository accountUserRepository;
     private final ApiKeyEncryptionService encryptionService;
     private final CurrentUserService currentUserService;
-    private final UserRepository userRepository;
 
     private final ToolCallingManager toolCallingManager;
     private final ObservationRegistry observationRegistry;
@@ -80,9 +83,9 @@ public class LlmProviderRegistry {
             LlmProviderRepository providerRepository,
             LlmGlobalSettingRepository globalSettingRepository,
             LlmUserSettingRepository userSettingRepository,
+            UserRepository accountUserRepository,
             ApiKeyEncryptionService encryptionService,
             CurrentUserService currentUserService,
-            UserRepository userRepository,
             @Autowired(required = false) ToolCallingManager toolCallingManager,
             @Autowired(required = false) ObservationRegistry observationRegistry,
             @Autowired(required = false) @Qualifier("interviewSkillsToolCallback") ToolCallback interviewSkillsToolCallback) {
@@ -90,9 +93,9 @@ public class LlmProviderRegistry {
         this.providerRepository = providerRepository;
         this.globalSettingRepository = globalSettingRepository;
         this.userSettingRepository = userSettingRepository;
+        this.accountUserRepository = accountUserRepository;
         this.encryptionService = encryptionService;
         this.currentUserService = currentUserService;
-        this.userRepository = userRepository;
         this.toolCallingManager = toolCallingManager;
         this.observationRegistry = observationRegistry;
         this.interviewSkillsToolCallback = interviewSkillsToolCallback;
@@ -105,6 +108,13 @@ public class LlmProviderRegistry {
             ToolCallback interviewSkillsToolCallback) {
         this(properties, null, null, null, null, null, null,
             toolCallingManager, observationRegistry, interviewSkillsToolCallback);
+    }
+
+    private static RetryTemplate createNoRetryTemplate() {
+        RetryPolicy retryPolicy = RetryPolicy.builder()
+            .maxRetries(0)
+            .build();
+        return new RetryTemplate(retryPolicy);
     }
 
     /**
@@ -135,6 +145,10 @@ public class LlmProviderRegistry {
         return getChatClient(resolveDefaultChatProviderIdForUser(userId));
     }
 
+    public ChatClient getDefaultPlainChatClientForUser(Long userId) {
+        return getPlainChatClient(resolveDefaultChatProviderIdForUser(userId));
+    }
+
     /**
      * Get a ChatClient for the specified provider, falling back to the default if null or blank.
      */
@@ -156,6 +170,13 @@ public class LlmProviderRegistry {
 
     public String resolveChatProviderIdOrDefault(String providerId) {
         return resolveProviderId(providerId);
+    }
+
+    public String resolvePlainChatProviderIdForUser(Long userId, String providerId) {
+        if (providerId != null && !providerId.isBlank()) {
+            return providerId;
+        }
+        return resolveDefaultChatProviderIdForUser(userId);
     }
 
     /**
@@ -255,7 +276,7 @@ public class LlmProviderRegistry {
                 openAiApi,
                 options,
                 toolCallingManager,
-                RetryUtils.DEFAULT_RETRY_TEMPLATE,
+                NO_RETRY_TEMPLATE,
                 observationRegistry != null ? observationRegistry : ObservationRegistry.NOOP
         );
     }
@@ -288,7 +309,7 @@ public class LlmProviderRegistry {
             openAiApi,
             MetadataMode.EMBED,
             options,
-            RetryUtils.DEFAULT_RETRY_TEMPLATE,
+            NO_RETRY_TEMPLATE,
             observationRegistry != null ? observationRegistry : ObservationRegistry.NOOP
         );
     }
@@ -359,36 +380,73 @@ public class LlmProviderRegistry {
 
     private String resolveDefaultChatProviderId() {
         if (globalSettingRepository == null || userSettingRepository == null || currentUserService == null) {
+            log.info("[LlmProviderRegistry] resolveDefaultChatProviderId fallback to properties.defaultProvider because repositories or currentUserService are unavailable");
             return properties.getDefaultProvider();
         }
         Optional<CurrentUser> currentUser = currentUserService.currentUser();
+        log.info(
+            "[LlmProviderRegistry] resolveDefaultChatProviderId currentUserPresent={}, currentUserId={}, username={}, isAdmin={}",
+            currentUser.isPresent(),
+            currentUser.map(CurrentUser::id).orElse(null),
+            currentUser.map(CurrentUser::username).orElse(null),
+            currentUser.map(CurrentUser::isAdmin).orElse(false)
+        );
         if (currentUser.isPresent() && !currentUser.get().isAdmin()) {
             Long userId = currentUser.get().id();
+            log.info("[LlmProviderRegistry] resolveDefaultChatProviderId using user-level default chat provider, userId={}", userId);
             return userSettingRepository.findById(userId)
                 .map(LlmUserSettingEntity::getDefaultChatProviderId)
                 .filter(id -> !isBlank(id))
                 .orElseThrow(() -> new BusinessException(ErrorCode.PROVIDER_NOT_FOUND,
                     "当前账号未设置默认模型，请先在系统设置中新增 Provider 并设为文字服务"));
         }
-        return globalSettingRepository.findById(LlmGlobalSettingEntity.SINGLETON_ID)
+        String globalDefault = globalSettingRepository.findById(LlmGlobalSettingEntity.SINGLETON_ID)
             .map(LlmGlobalSettingEntity::getDefaultChatProviderId)
             .filter(id -> !isBlank(id))
             .orElse(properties.getDefaultProvider());
+        log.info("[LlmProviderRegistry] resolveDefaultChatProviderId using global default chat provider={}", globalDefault);
+        return globalDefault;
     }
 
     private String resolveDefaultChatProviderIdForUser(Long userId) {
         if (userId == null) {
             throw new BusinessException(ErrorCode.PROVIDER_NOT_FOUND, "当前数据没有用户归属，无法解析默认模型");
         }
-        if (globalSettingRepository == null || userSettingRepository == null || userRepository == null) {
+        if (globalSettingRepository == null || userSettingRepository == null || currentUserService == null) {
+            log.info(
+                "[LlmProviderRegistry] resolveDefaultChatProviderIdForUser fallback to properties.defaultProvider because repositories or currentUserService are unavailable, requestedUserId={}",
+                userId
+            );
             return properties.getDefaultProvider();
         }
-        if (userRepository.hasAdminRole(userId)) {
-            return globalSettingRepository.findById(LlmGlobalSettingEntity.SINGLETON_ID)
+        Optional<CurrentUser> currentUser = currentUserService.currentUser();
+        log.info(
+            "[LlmProviderRegistry] resolveDefaultChatProviderIdForUser requestedUserId={}, currentUserPresent={}, currentUserId={}, username={}, isAdmin={}",
+            userId,
+            currentUser.isPresent(),
+            currentUser.map(CurrentUser::id).orElse(null),
+            currentUser.map(CurrentUser::username).orElse(null),
+            currentUser.map(CurrentUser::isAdmin).orElse(false)
+        );
+        boolean adminRequest = currentUser.map(CurrentUser::isAdmin)
+            .orElseGet(() -> accountUserRepository != null && accountUserRepository.hasAdminRole(userId));
+        if (adminRequest) {
+            String globalDefault = globalSettingRepository.findById(LlmGlobalSettingEntity.SINGLETON_ID)
                 .map(LlmGlobalSettingEntity::getDefaultChatProviderId)
                 .filter(id -> !isBlank(id))
                 .orElse(properties.getDefaultProvider());
+            log.info(
+                "[LlmProviderRegistry] resolveDefaultChatProviderIdForUser admin request detected, using global default chat provider={}, requestedUserId={}, currentUserPresent={}",
+                globalDefault,
+                userId,
+                currentUser.isPresent()
+            );
+            return globalDefault;
         }
+        log.info(
+            "[LlmProviderRegistry] resolveDefaultChatProviderIdForUser using user-level default chat provider, requestedUserId={}",
+            userId
+        );
         return userSettingRepository.findById(userId)
             .map(LlmUserSettingEntity::getDefaultChatProviderId)
             .filter(id -> !isBlank(id))
@@ -418,6 +476,7 @@ public class LlmProviderRegistry {
                 ? properties.getDefaultEmbeddingProvider()
                 : properties.getDefaultProvider());
     }
+
 
     private ProviderSnapshot loadProviderOrThrow(String providerId) {
         if (providerRepository == null) {
@@ -490,4 +549,14 @@ public class LlmProviderRegistry {
         Double temperature
     ) {
     }
+
+    public String describeProvider(String providerId) {
+        ProviderSnapshot snapshot = loadProviderOrThrow(providerId);
+        return "provider=%s, baseUrl=%s, model=%s".formatted(
+            snapshot.id(),
+            snapshot.baseUrl(),
+            snapshot.model()
+        );
+    }
+
 }

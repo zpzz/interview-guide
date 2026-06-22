@@ -242,7 +242,9 @@ public class LlmProviderConfigService {
     rwLock.readLock().lock();
     try {
       if (!isDatabaseBacked()) {
-        return new DefaultProviderDTO(properties.getDefaultProvider(), properties.getDefaultEmbeddingProvider());
+        return new DefaultProviderDTO(
+            properties.getDefaultProvider(),
+            properties.getDefaultEmbeddingProvider());
       }
       if (currentUserService.isAdmin()) {
         LlmGlobalSettingEntity setting = getGlobalSettingOrThrow();
@@ -659,6 +661,8 @@ public class LlmProviderConfigService {
     return userSettingRepository.findById(userId)
         .orElseGet(() -> userSettingRepository.save(LlmUserSettingEntity.builder()
             .userId(userId)
+            .defaultChatProviderId(null)
+            .defaultEmbeddingProviderId(null)
             .build()));
   }
 

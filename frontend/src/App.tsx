@@ -26,6 +26,7 @@ const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const AdminUsersPage = lazy(() => import('./pages/AdminUsersPage'));
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const InterviewDetailPanel = lazy(() => import('./components/InterviewDetailPanel'));
+const ResumeMakerPage = lazy(() => import('./pages/ResumeMakerPage'));
 
 // Loading component
 const Loading = () => (
@@ -204,6 +205,9 @@ function App() {
 
             {/* 面试中心 */}
             <Route path="interview-hub" element={<InterviewHubPage />} />
+
+            {/* AI 简历编写 */}
+            <Route path="resume-maker" element={<ResumeMakerPage />} />
 
             {/* 面试记录列表 */}
             <Route path="interviews" element={<InterviewHistoryWrapper />} />

@@ -5,6 +5,7 @@ import {
   ChevronRight,
   Database,
   FileStack,
+  FileText,
   LogOut,
   MessageSquare,
   Moon,
@@ -106,6 +107,7 @@ export default function Layout() {
       title: '面试准备',
       items: [
         { id: 'resumes', path: '/history', label: '简历管理', icon: FileStack, description: '管理简历，AI 分析' },
+        { id: 'resume-maker', path: '/resume-maker', label: 'AI 简历编写', icon: FileText, description: '录入信息，生成简历' },
         { id: 'interview-hub', path: '/interview-hub', label: '模拟面试', icon: Sparkles, description: '文字/语音面试练习' },
         { id: 'interviews', path: '/interviews', label: '面试记录', icon: Users, description: '查看面试历史' },
         { id: 'interview-schedule', path: '/interview-schedule', label: '面试日程', icon: Calendar, description: '管理面试安排' },

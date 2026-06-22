@@ -1,0 +1,57 @@
+[
+  {
+    "id": "elegant-red",
+    "name": "典雅酒红",
+    "description": "适合社招和综合型岗位，强调稳重与专业感",
+    "accentColor": "#8b1e3f",
+    "layoutType": "single-column",
+    "recommendedScenario": "社招",
+    "previewImageUrl": "/resume-master-templates/images/典雅酒红.png",
+    "referenceHtmlUrl": "/resume-master-templates/html/典雅酒红.html",
+    "referencePdfUrl": "/resume-master-templates/pdf/典雅酒红.pdf"
+  },
+  {
+    "id": "geek-chic",
+    "name": "极客风尚",
+    "description": "适合技术岗位与项目导向型简历，信息表达更锋利",
+    "accentColor": "#0f172a",
+    "layoutType": "single-column",
+    "recommendedScenario": "技术",
+    "previewImageUrl": "/resume-master-templates/images/极客风尚.png",
+    "referenceHtmlUrl": "/resume-master-templates/html/极客风尚.html",
+    "referencePdfUrl": "/resume-master-templates/pdf/极客风尚.pdf"
+  },
+  {
+    "id": "minimal-white",
+    "name": "极简纯白",
+    "description": "适合通用岗位与一页纸简历，强调克制和清晰度",
+    "accentColor": "#1f2937",
+    "layoutType": "single-column",
+    "recommendedScenario": "通用",
+    "previewImageUrl": "/resume-master-templates/images/极简纯白.png",
+    "referenceHtmlUrl": "/resume-master-templates/html/极简纯白.html",
+    "referencePdfUrl": "/resume-master-templates/pdf/极简纯白.pdf"
+  },
+  {
+    "id": "calm-dual",
+    "name": "沉稳双栏",
+    "description": "适合信息密度较高的技术岗位，便于分栏展示技能与经历",
+    "accentColor": "#1d4ed8",
+    "layoutType": "two-column",
+    "recommendedScenario": "技术",
+    "previewImageUrl": "/resume-master-templates/images/沉稳双栏.png",
+    "referenceHtmlUrl": "/resume-master-templates/html/沉稳双栏.html",
+    "referencePdfUrl": "/resume-master-templates/pdf/沉稳双栏.pdf"
+  },
+  {
+    "id": "fresh-blue-gray",
+    "name": "清新蓝灰",
+    "description": "适合校招、产品和综合型岗位，视觉更轻盈",
+    "accentColor": "#5b7c99",
+    "layoutType": "single-column",
+    "recommendedScenario": "校招",
+    "previewImageUrl": "/resume-master-templates/images/清新蓝灰.png",
+    "referenceHtmlUrl": "/resume-master-templates/html/清新蓝灰.html",
+    "referencePdfUrl": "/resume-master-templates/pdf/清新蓝灰.pdf"
+  }
+]

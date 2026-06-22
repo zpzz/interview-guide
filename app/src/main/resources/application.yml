@@ -179,6 +179,11 @@ app:
       - application/msword
       - application/vnd.openxmlformats-officedocument.wordprocessingml.document
       - text/plain
+  resume-maker:
+    system-prompt-path: ${APP_RESUME_MAKER_SYSTEM_PROMPT_PATH:classpath:prompts/resume-maker/resume-maker-system.st}
+    generate-prompt-path: ${APP_RESUME_MAKER_GENERATE_PROMPT_PATH:classpath:prompts/resume-maker/resume-maker-generate-user.st}
+    optimize-prompt-path: ${APP_RESUME_MAKER_OPTIMIZE_PROMPT_PATH:classpath:prompts/resume-maker/resume-maker-optimize-user.st}
+    default-template-id: ${APP_RESUME_MAKER_DEFAULT_TEMPLATE_ID:elegant-red}
 
   # RustFS (S3兼容) 存储配置
   storage:

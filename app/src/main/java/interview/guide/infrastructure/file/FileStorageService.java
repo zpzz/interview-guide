@@ -54,9 +54,23 @@ public class FileStorageService {
     }
 
     /**
+     * 上传简历模板文件
+     */
+    public String uploadResumeTemplate(MultipartFile file) {
+        return uploadFile(file, "resume-templates");
+    }
+
+    /**
      * 删除知识库文件
      */
     public void deleteKnowledgeBase(String fileKey) {
+        deleteFile(fileKey);
+    }
+
+    /**
+     * 删除简历模板文件
+     */
+    public void deleteResumeTemplate(String fileKey) {
         deleteFile(fileKey);
     }
 
